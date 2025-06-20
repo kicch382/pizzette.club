@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Publish Likes App</title>
+  <style>
+    body {
+      background: #fff;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+      z-index: 1;
+      position: relative;
+    }
+    #result {
+      color: #333;
+      margin-top: 24px;
+      font-size: 1.2em;
+      font-weight: bold;
+      display: none;
+      z-index: 1;
+    }
+    textarea {
+      padding: 8px;
+      font-size: 1em;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 100em;
+      height: auto;
+      min-height: 3em;
+      box-sizing: border-box;
+      resize: vertical;
+      line-height: 1.5;
+    }
+    button {
+      padding: 8px 20px;
+      font-size: 1em;
+      background: #0069ed;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #0053ba;
+    }
+    #star-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="star-canvas"></canvas>
+  <div class="container">
+    <textarea id="textbox" rows="3" placeholder="Type something..."></textarea>
+    <button id="publishBtn">publish</button>
+    <div id="result">
+      You received <span id="counter">0</span> likes! Well done!
+    </div>
+  </div>
+  <script>
+    // Animated counter
+    function animateCount(el, to, duration = 1000) {
+      const start = 0;
+      const startTime = performance.now();
+      function update(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const value = Math.floor(progress * (to - start) + start);
+        el.textContent = value;
+        if (progress < 1) {
+          requestAnimationFrame(update);
+        } else {
+          el.textContent = to;
+        }
+      }
+      requestAnimationFrame(update);
+    }
+
+    // Star and thumbs up animation
+    const canvas = document.getElementById('star-canvas');
+    const ctx = canvas.getContext('2d');
+    let flyingObjects = [];
+    let animationFrameId = null;
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function drawStar(ctx, x, y, r, points, inset, color) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.translate(x, y);
+      ctx.moveTo(0, 0 - r);
+      for (let i = 0; i < points; i++) {
+        ctx.rotate(Math.PI / points);
+        ctx.lineTo(0, 0 - (r * inset));
+        ctx.rotate(Math.PI / points);
+        ctx.lineTo(0, 0 - r);
+      }
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Draw a simple thumbs up icon using canvas API
+    function drawThumbsUp(ctx, x, y, size, color) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(size / 32, size / 32); // Normalize to 32x32 viewBox
+      ctx.beginPath();
+      // Palm
+      ctx.moveTo(8, 20); ctx.lineTo(8, 28); ctx.lineTo(24, 28); ctx.lineTo(24, 20); ctx.closePath();
+      // Thumb
+      ctx.moveTo(24, 19); ctx.bezierCurveTo(30, 13, 28, 8, 24, 8);
+      ctx.lineTo(20, 8); ctx.lineTo(20, 20);
+      ctx.closePath();
+      // Fingers
+      ctx.moveTo(10, 20); ctx.lineTo(10, 12); ctx.arc(12, 12, 2, Math.PI, 0, false);
+      ctx.lineTo(14, 20);
+      ctx.moveTo(14, 20); ctx.lineTo(14, 12); ctx.arc(16, 12, 2, Math.PI, 0, false);
+      ctx.lineTo(18, 20);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function launchFlyingObjects(x, y) {
+      // 10 stars + 3 thumbs up
+      const numStars = 10;
+      const numThumbs = 3;
+      const starDuration = 500 * 1.1;   // 10% slower = 550ms
+      const thumbDuration = 1000 * 1.1; // 10% slower = 1100ms
+      const now = performance.now();
+      const w = canvas.width, h = canvas.height;
+      flyingObjects = [];
+
+      // Launch stars
+      for (let i = 0; i < numStars; i++) {
+        // Random angle
+        const angle = Math.random() * 2 * Math.PI;
+        // Find edge point in that direction
+        let tx, ty;
+        // Calculate farthest intersection with canvas edge
+        const dx = Math.cos(angle);
+        const dy = Math.sin(angle);
+        let t = Infinity;
+        if (dx !== 0) {
+          const t1 = (0 - x) / dx;
+          const t2 = (w - x) / dx;
+          t = Math.min(t, t1 > 0 ? t1 : Infinity, t2 > 0 ? t2 : Infinity);
+        }
+        if (dy !== 0) {
+          const t3 = (0 - y) / dy;
+          const t4 = (h - y) / dy;
+          t = Math.min(t, t3 > 0 ? t3 : Infinity, t4 > 0 ? t4 : Infinity);
+        }
+        tx = x + dx * t;
+        ty = y + dy * t;
+
+        flyingObjects.push({
+          type: 'star',
+          startX: x, startY: y,
+          endX: tx, endY: ty,
+          startTime: now,
+          duration: starDuration,
+          color: '#f9d923',
+          size: 14 + Math.random() * 8,
+          points: 5 + Math.floor(Math.random() * 2),
+          inset: 0.5 + Math.random() * 0.2,
+          finished: false
+        });
+      }
+
+      // Launch thumbs up, evenly spread in angle
+      for (let i = 0; i < numThumbs; i++) {
+        const baseAngle = Math.random() * 2 * Math.PI;
+        // Make thumbs go in roughly separated directions
+        const angle = baseAngle + i * (2 * Math.PI / numThumbs);
+        let tx, ty;
+        const dx = Math.cos(angle);
+        const dy = Math.sin(angle);
+        let t = Infinity;
+        if (dx !== 0) {
+          const t1 = (0 - x) / dx;
+          const t2 = (w - x) / dx;
+          t = Math.min(t, t1 > 0 ? t1 : Infinity, t2 > 0 ? t2 : Infinity);
+        }
+        if (dy !== 0) {
+          const t3 = (0 - y) / dy;
+          const t4 = (h - y) / dy;
+          t = Math.min(t, t3 > 0 ? t3 : Infinity, t4 > 0 ? t4 : Infinity);
+        }
+        tx = x + dx * t;
+        ty = y + dy * t;
+
+        flyingObjects.push({
+          type: 'thumb',
+          startX: x, startY: y,
+          endX: tx, endY: ty,
+          startTime: now,
+          duration: thumbDuration, // thumbs are slower, now 1100ms
+          color: '#3399ff',
+          size: 28 + Math.random() * 10,
+          finished: false
+        });
+      }
+
+      if (!animationFrameId) animateFlyingObjects();
+    }
+
+    function animateFlyingObjects() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const current = performance.now();
+      let running = false;
+      for (const obj of flyingObjects) {
+        if (obj.finished) continue;
+        const elapsed = current - obj.startTime;
+        const t = Math.min(elapsed / obj.duration, 1);
+        const x = obj.startX + (obj.endX - obj.startX) * t;
+        const y = obj.startY + (obj.endY - obj.startY) * t;
+
+        // For stars, check if at or past border and mark as finished
+        if (obj.type === 'star') {
+          // We consider the border hit if t >= 1
+          if (t >= 1) {
+            obj.finished = true;
+            continue;
+          }
+          drawStar(ctx, x, y, obj.size, obj.points, obj.inset, obj.color);
+        } else if (obj.type === 'thumb') {
+          // Thumbs up always move for their full duration
+          if (t >= 1) {
+            obj.finished = true;
+            continue;
+          }
+          drawThumbsUp(ctx, x, y, obj.size, obj.color);
+        }
+        if (t < 1) running = true;
+      }
+      if (running) {
+        animationFrameId = requestAnimationFrame(animateFlyingObjects);
+      } else {
+        animationFrameId = null;
+        flyingObjects = [];
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
+    // Track last mouse position (relative to viewport)
+    let lastMouse = { x: window.innerWidth/2, y: window.innerHeight/2 };
+    document.addEventListener('mousemove', function(e) {
+      lastMouse.x = e.clientX;
+      lastMouse.y = e.clientY;
+    });
+
+    document.getElementById('publishBtn').addEventListener('click', function(e) {
+      // Randomize target between 1500 and 15000
+      const randomTarget = Math.floor(Math.random() * (15000 - 1500 + 1)) + 1500;
+      document.getElementById('result').style.display = 'block';
+      animateCount(document.getElementById('counter'), randomTarget, 1000);
+      // If mouse was never moved, default to button center
+      let x = lastMouse.x, y = lastMouse.y;
+      if (!x || !y) {
+        const rect = e.target.getBoundingClientRect();
+        x = rect.left + rect.width/2;
+        y = rect.top + rect.height/2;
+      }
+      launchFlyingObjects(x, y);
+    });
+  </script>
+</body>
+</html>
